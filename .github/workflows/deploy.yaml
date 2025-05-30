@@ -5,12 +5,54 @@ on:
     branches: [ "master" ]
 
 jobs:
-  deploy:
+  test:
     runs-on: self-hosted
-    
+    services:
+      postgres:
+        image: postgres:15-alpine
+        ports:
+          - "5432:5432"
+        env:
+          POSTGRES_DB: kubsu
+          POSTGRES_USER: kubsu
+          POSTGRES_PASSWORD: kubsu
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: dev
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build container
+        uses: docker/build-push-action@v3
+        with:
+          context: .
+          file: ./Dockerfile.dev
+          tags: ${{ vars.DOCKERHUB_USERNAME }}/python-crud-dev:latest
+          load: true
+
+      - name: Run tests
+        run: |
+          docker run --rm --network=host ${{ vars.DOCKERHUB_USERNAME }}/python-crud-dev:latest
+
+
+  deploy:
+    needs: test
+    runs-on: self-hosted
+    
+    steps:
+      - name: Checkout master branch
+        uses: actions/checkout@v4
+        with:
+          ref: master
 
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -25,7 +67,7 @@ jobs:
         uses: docker/build-push-action@v3
         with:
           context: .
-          file: Dockerfile.prod
+          file: ./Dockerfile.prod
           push: true
           tags: ${{ vars.DOCKERHUB_USERNAME }}/python-crud:latest
 
